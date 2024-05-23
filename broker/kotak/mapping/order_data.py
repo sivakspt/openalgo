@@ -13,6 +13,14 @@ def map_order_data(order_data):
     - The modified order_data with updated 'tradingsymbol' and 'product' fields.
     """
         # Check if 'data' is None
+    #if order_data has key 'data' and its value is None
+    
+    
+    if order_data['stat'] == 'Not_Ok':
+        print("No data available.")
+        order_data = {}  # or set it to an empty list if it's supposed to be a list
+        return order_data
+        
     if order_data['data'] is None:
         # Handle the case where there is no data
         # For example, you might want to display a message to the user
@@ -140,6 +148,10 @@ def map_trade_data(trade_data):
     Returns:
     - The modified order_data with updated 'tradingsymbol' and 'product' fields.
     """
+    if trade_data['stat'] == 'Not_Ok':
+        print("No data available.")
+        trade_data = {}  # or set it to an empty list if it's supposed to be a list
+        return trade_data
         # Check if 'data' is None
     if trade_data['data'] is None:
         # Handle the case where there is no data
@@ -222,14 +234,14 @@ def transform_positions_data(positions_data):
 
 def transform_holdings_data(holdings_data):
     transformed_data = []
-    for holdings in holdings_data['holdings']:
+    for holding in holdings_data:
         transformed_position = {
-            "symbol": holdings.get('tradingsymbol', ''),
-            "exchange": holdings.get('exchange', ''),
-            "quantity": holdings.get('quantity', 0),
-            "product": holdings.get('product', ''),
-            "pnl": holdings.get('profitandloss', 0.0),
-            "pnlpercent": holdings.get('pnlpercentage', 0.0)
+            "symbol": holding.get('symbol', ''),
+            "exchange": holding.get('exchangeSegment', ''),
+            "quantity": holding.get('quantity', 0),
+            "product": holding.get('instrumentType', ''),
+            "pnl": round((float(holding.get('mktValue', 0.0)) - float(holding.get('holdingCost', 0.0))),2),
+            "pnlpercent": round((float(holding.get('mktValue', 0.0)) - float(holding.get('holdingCost', 0.0)))/float(holding.get('holdingCost', 0.0))*100,2)
         }
         transformed_data.append(transformed_position)
     return transformed_data
@@ -247,41 +259,50 @@ def map_portfolio_data(portfolio_data):
     - The modified portfolio_data with 'product' fields changed for 'holdings' and 'totalholding' included.
     """
     # Check if 'data' is None or doesn't contain 'holdings'
-    if portfolio_data.get('data') is None or 'holdings' not in portfolio_data['data']:
+    if portfolio_data.get('data') is None:
         print("No data available.")
         # Return an empty structure or handle this scenario as needed
         return {}
 
     # Directly work with 'data' for clarity and simplicity
-    data = portfolio_data['data']
+    holdings = portfolio_data['data']
 
     # Modify 'product' field for each holding if applicable
-    if data.get('holdings'):
-        for portfolio in data['holdings']:
-            symbol = portfolio['tradingsymbol']
-            exchange = portfolio['exchange']
-            symbol_from_db = get_oa_symbol(symbol, exchange)
+    
+    for portfolio in holdings:
+        token = portfolio['instrumentToken']
+        
+        exchange = map_exchange(portfolio['exchangeSegment'])
+        portfolio['exchangeSegment'] = exchange
+        symbol_from_db = get_symbol(token, exchange)
             
             # Check if a symbol was found; if so, update the trading_symbol in the current order
-            if symbol_from_db:
-                portfolio['tradingsymbol'] = symbol_from_db
-            if portfolio['product'] == 'DELIVERY':
-                portfolio['product'] = 'CNC'  # Modify 'product' field
-            else:
-                print("AngelOne Portfolio - Product Value for Delivery Not Found or Changed.")
+        if symbol_from_db:
+            portfolio['symbol'] = symbol_from_db
+        if portfolio['instrumentType'] == 'Equity':
+            portfolio['instrumentType'] = 'CNC'  # Modify 'product' field
+        else:
+            print("AngelOne Portfolio - Product Value for Delivery Not Found or Changed.")
     
     # The function already works with 'data', which includes 'holdings' and 'totalholding',
     # so we can return 'data' directly without additional modifications.
-    return data
+    
+    return holdings
 
 
 def calculate_portfolio_statistics(holdings_data):
-    totalholdingvalue = holdings_data['totalholding']['totalholdingvalue']
-    totalinvvalue = holdings_data['totalholding']['totalinvvalue']
-    totalprofitandloss = holdings_data['totalholding']['totalprofitandloss']
+    
+    totalholdingvalue = sum(item['mktValue'] for item in holdings_data)
+    totalinvvalue = sum(item['holdingCost'] for item in holdings_data)
+    totalprofitandloss = sum(item['mktValue'] - item['holdingCost'] for item in holdings_data)
+    
+    totalpnlpercentage = sum((item['mktValue'] - item['holdingCost']) / item['holdingCost'] * 100 for item in holdings_data)
+    
     
     # To avoid division by zero in the case when total_investment_value is 0
-    totalpnlpercentage = holdings_data['totalholding']['totalpnlpercentage']
+    totalpnlpercentage = round(totalpnlpercentage, 2)
+    
+    
 
     return {
         'totalholdingvalue': totalholdingvalue,
